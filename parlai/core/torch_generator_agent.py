@@ -712,7 +712,19 @@ class TorchGeneratorAgent(TorchAgent, ABC):
         score_view = scores.reshape(-1, scores.size(-1))
         loss_flattened = self.criterion(score_view, batch.label_vec.view(-1))
         loss_per_token = loss_flattened.view(scores.shape[:-1])
+        loss = loss_per_token.sum(dim=1)
         notnull = batch.label_vec.ne(self.NULL_IDX)
+        target_tokens = notnull.long().sum(dim=-1)
+        correct = ((batch.label_vec == preds) * notnull).sum(dim=-1)
+
+        self.record_local_metric('old_loss', AverageMetric.many(loss, target_tokens))
+        self.record_local_metric('old_ppl', PPLMetric.many(loss, target_tokens))
+        self.record_local_metric(
+            'old_token_acc', AverageMetric.many(correct, target_tokens)
+        )
+        self.record_local_metric(
+            'old_token_em', AverageMetric.many(correct == target_tokens)
+        )
 
         # save loss to metrics
         # cross entropy loss
@@ -736,7 +748,6 @@ class TorchGeneratorAgent(TorchAgent, ABC):
         )
 
         # actually do backwards loss
-        loss = loss_per_token.sum(dim=1)
         loss = loss.sum()
         loss /= num_target_tokens.sum()  # average loss per token
         if return_output:
